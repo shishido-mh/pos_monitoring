@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Transaction Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .notification {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #4caf50; /* Green color */
+            color: #fff;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .notification-red {
+            background-color: #ff6347; /* Red color */
+        }
+
+        .chart-container {
+            width: 80%;
+            margin-top: 20px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-Time Transaction Data</h1>
+        <div class="notification" id="greenNotification">New row added!</div>
+        <div class="notification notification-red" id="redNotification">New row added with Z_score < 0!</div>
+        <div id="dataContainer"></div>
+        <div class="chart-container">
+            <canvas id="approvedChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="backendReversedChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="deniedChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="failedChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="processingChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="refundedChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="reversedChart"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let approvedChart, backendReversedChart, deniedChart, failedChart, processingChart, refundedChart, reversedChart;
+
+        function createChart(chartId, labels, data, label) {
+            const ctx = document.getElementById(chartId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            },
+                            reverse: true // Reverse the x-axis direction if needed
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: label
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart(chart, labels, data) {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.update();
+        }
+
+        function fetchData() {
+    fetch('http://127.0.0.1:5000/api/transactions') // Updated endpoint
+        .then(response => response.json())
+        .then(data => {
+            const tableHeaders = Object.keys(data[0]);
+            const reorderedHeaders = [
+                'time', 'hour', 'minute', 'approved', 'backend_reversed',
+                'denied', 'failed', 'processing', 'refunded', 'reversed',
+                'total', 'success_rate', 'denial_rate', 'reversal_rate',
+                'failure_rate', 'z_score'
+            ];
+            const orderedData = data.map(row => {
+                const orderedRow = {};
+                reorderedHeaders.forEach(header => {
+                    orderedRow[header] = row[header];
+                });
+                return orderedRow;
+            });
+
+            const table = document.createElement('table');
+
+            // Create table headers in the new order
+            const headerRow = document.createElement('tr');
+            reorderedHeaders.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText.charAt(0).toUpperCase() + headerText.slice(1);
+                headerRow.appendChild(th);
+            });
+            table.appendChild(headerRow);
+
+            // Create table rows in reverse order
+            const labels = [];
+            const approvedData = [];
+            const backendReversedData = [];
+            const deniedData = [];
+            const failedData = [];
+            const processingData = [];
+            const refundedData = [];
+            const reversedData = [];
+            for (let i = orderedData.length - 1; i >= 0; i--) {
+                const rowData = orderedData[i];
+                const row = document.createElement('tr');
+                reorderedHeaders.forEach(headerText => {
+                    const cell = document.createElement('td');
+                    cell.textContent = rowData[headerText];
+                    row.appendChild(cell);
+                });
+                table.appendChild(row);
+                labels.push(rowData['time']);
+                approvedData.push(rowData['approved']);
+                backendReversedData.push(rowData['backend_reversed']);
+                deniedData.push(rowData['denied']);
+                failedData.push(rowData['failed']);
+                processingData.push(rowData['processing']);
+                refundedData.push(rowData['refunded']);
+                reversedData.push(rowData['reversed']);
+            }
+
+            // Clear previous data and append new table
+            const dataContainer = document.getElementById('dataContainer');
+            dataContainer.innerHTML = '';
+            dataContainer.appendChild(table);
+
+            // Update charts
+            if (!approvedChart) {
+                approvedChart = createChart('approvedChart', labels, approvedData, 'Approved');
+                backendReversedChart = createChart('backendReversedChart', labels, backendReversedData, 'Backend Reversed');
+                deniedChart = createChart('deniedChart', labels, deniedData, 'Denied');
+                failedChart = createChart('failedChart', labels, failedData, 'Failed');
+                processingChart = createChart('processingChart', labels, processingData, 'Processing');
+                refundedChart = createChart('refundedChart', labels, refundedData, 'Refunded');
+                reversedChart = createChart('reversedChart', labels, reversedData, 'Reversed');
+            } else {
+                updateChart(approvedChart, labels, approvedData);
+                updateChart(backendReversedChart, labels, backendReversedData);
+                updateChart(deniedChart, labels, deniedData);
+                updateChart(failedChart, labels, failedData);
+                updateChart(processingChart, labels, processingData);
+                updateChart(refundedChart, labels, refundedData);
+                updateChart(reversedChart, labels, reversedData);
+            }
+            const greenNotification = document.getElementById('greenNotification');
+            greenNotification.textContent = 'New row added!';
+            greenNotification.style.display = 'block'; // Show the green notification
+            setTimeout(() => {
+                greenNotification.style.display = 'none'; // Hide green notification after a few seconds
+            }, 5000); // Change 5000 to the desired duration in milliseconds
+
+            // Show red notifications for specific conditions
+            const redNotification = document.getElementById('redNotification');
+
+            const reversalRate = parseFloat(data[data.length - 1].reversal_rate);
+            const failureRate = parseFloat(data[data.length - 1].failure_rate);
+            const denialRate = parseFloat(data[data.length - 1].denial_rate);
+            const totalTransactions = parseInt(data[data.length - 1].total);
+
+            // High reversal rate notification
+            if (reversalRate > 0.10) {
+                redNotification.textContent = 'High reversal rate detected!';
+                redNotification.style.display = 'block';
+                // Hide red notification after 5 seconds
+                setTimeout(() => {
+                    redNotification.style.display = 'none';
+                }, 5000);
+            }
+
+            // High failure rate notification
+            if (failureRate > 0.001) {
+                redNotification.textContent = 'High failure rate detected!';
+                redNotification.style.display = 'block';
+                // Hide red notification after 5 seconds
+                setTimeout(() => {
+                    redNotification.style.display = 'none';
+                }, 5000);
+            }
+
+            // High denial rate and total transactions notification
+            if (denialRate > 0.1 && totalTransactions >= 30) {
+                redNotification.textContent = 'High denial rate and total transactions reached 30!';
+                redNotification.style.display = 'block';
+                // Hide red notification after 5 seconds
+                setTimeout(() => {
+                    redNotification.style.display = 'none';
+                }, 5000);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching data:', error);
+        });
+}
+
+        // Fetch data every 5 seconds (adjust as needed)
+        setInterval(fetchData, 5000); // Fetch data initially and every 5 seconds
+        fetchData(); // Fetch data initially
+    </script>
+</body>
+</html>
